@@ -1,7 +1,7 @@
 ---
-title: "p"
-author: "Jens Iversen"
-date: "2024-10-10"
+title: "P-5 kode"
+authors: "Jakob Guldbæk, Jens Iversen, Karoline Pedersen, Louise Therkildsen and Santa Tisenkopfa"
+date: "2024-12-12"
 output: html_document
 ---
 
