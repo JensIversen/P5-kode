@@ -1,0 +1,541 @@
+---
+title: "p"
+author: "Jens Iversen"
+date: "2024-10-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+load(file='filepath/Homedata.Rda')
+```
+
+
+
+```{r}
+library(car)
+library(tidyverse)
+library(lmtest)
+library(latex2exp)
+library(xtable)
+library(GGally)
+library(texreg)
+```
+
+
+```{r}
+new_homedata <- homedata %>% select(-KVHX, -GisY_Wgs84, -GisX_Wgs84, -NK_SagId, -DWID_Periode_Formid, -DWID_Periode_Annoncering, -DWID_Periode_Oprettet, -DWID_Projektsalg, -DWID_Periode_Salg, -AntalStatusmoederSaelger, - AntalFremvisninger, -row_id, -Beloeb_Udbetaling, -Dato_Annoncering, -Hoejhus, -SagsType, -RegionNavn, -KommuneNavn, -Beloeb_MDBrutto, -Beloeb_MDNetto, - Beloeb_EjerUdgift, -Pris_EjdVurdering, -Pris_FoersteUdbud, -Pris_AktuelUdbud, -Dato_AktuelUdbudPris, -Dato_Annoncering, -Sag_AnnonceretNettet, -Adresse_PostNr, -Adresse_Etage, -Areal_Bolig_Commercial, -Areal_GarageCarport, -Ejd_Altan, -Ejd_AntalPlan, -Ejd_AntalSoveVaerelser, -Ejd_AntalToiletter, -Ejd_Energimaerke, -Ejd_Ombygningsaar, -Dist_raadhus)
+
+new_homedata <- new_homedata %>% drop_na(Pris_Salg)
+
+new_homedata <- new_homedata %>% filter(SagsStatus == 'Solgt')
+
+Solgte_boliger <- new_homedata %>% select(-SagsStatus, -Postnr, -Bynavn, -corona, -Dist_skole, -Sogn, -StorGrund, -Salgstid, -Ejd_Opfoerelsesaar)
+
+Villa_data <- Solgte_boliger %>% filter(EjdType == 'Villa')
+
+Villa_Hasseris <- Villa_data %>% filter(Afstemningsomraade == 'Kfum - Hallen' | Afstemningsomraade == 'Hasseris Gymnasium')
+
+Villa_Gug <- Villa_data %>% filter(Afstemningsomraade == 'Gug Skole')
+
+Villa_Vejgård <- Villa_data %>% filter(Afstemningsomraade == 'Vejgaard Østre Skole' | Afstemningsomraade == 'Vejgaardhallen')
+
+Villa_Klarup <- Villa_data %>% filter(Afstemningsomraade == 'Klaruphallen')
+
+```
+
+
+
+```{r}
+Villa_Hasseris <- Villa_Hasseris %>% drop_na()
+Villa_Gug <- Villa_Gug %>% drop_na()
+Villa_Vejgård <- Villa_Vejgård %>% drop_na()
+Villa_Klarup <- Villa_Klarup %>% drop_na()
+
+Villa_Gug <- cbind(Villa_Gug, Villa_Gug$Salgsaar-2010)
+colnames(Villa_Gug)[12] <- "Trend" 
+
+Villa_Hasseris <- cbind(Villa_Hasseris, Villa_Hasseris$Salgsaar-2010)
+colnames(Villa_Hasseris)[12] <- "Trend" 
+
+Villa_Klarup <- cbind(Villa_Klarup, Villa_Klarup$Salgsaar-2010)
+colnames(Villa_Klarup)[12] <- "Trend" 
+
+Villa_Vejgård <- cbind(Villa_Vejgård, Villa_Vejgård$Salgsaar-2010)
+colnames(Villa_Vejgård)[12] <- "Trend" 
+```
+
+
+# Fitting a model to Villa_Gug 
+```{r}
+gugmod2 <- lm(log(Pris_Salg) ~ log(Areal_Bolig)  + Ejd_AntalRum + Alder + Trend, data = Villa_Gug)
+#residuals
+rstan_gugmod2 <- rstandard(gugmod2)
+rstud_gugmod2 <- rstudent(gugmod2)
+# scatter plots of residuals vs the explanatory variables (skal køres i et normalt r script)
+plot(Villa_Gug$Alder, rstan_gugmod2, xlab = "Alder", ylab = "Standardised Residuals")
+abline(h=mean(rstan_gugmod2),col = "red")
+
+plot(Villa_Gug$Trend, rstan_gugmod2, xlab = "Trend", ylab = "Standardised Residuals")
+abline(h=mean(rstan_gugmod2),col = "red")
+
+plot(log(Villa_Gug$Areal_Bolig), rstan_gugmod2, xlab = "Log[Bolig_Areal]", ylab = "Standardised Residuals")
+abline(h=mean(rstan_gugmod2),col = "red")
+
+plot(Villa_Gug$Ejd_AntalRum, rstan_gugmod2, xlab = "Ejd_AntalRum", ylab = "Standardised Residuals")
+abline(h=mean(rstan_gugmod2),col = "red")
+
+#Standard r diagnostic plots for lm
+cooks.level.g <- pf(0.1, df1 = 5 , df2 = length(Villa_Gug$Pris_Salg))
+plot(gugmod2, cook.levels = c(cooks.level.g), sub.caption = " ")
+
+#rank
+des_mat_gugmod2 <- model.matrix(gugmod2)
+qr(des_mat_gugmod2)$rank
+
+# checking standardised residual
+abs_rstan_gugmod2 <- abs(rstan_gugmod2)
+std_out_gugmod2 <- abs_rstan_gugmod2[which(abs_rstan_gugmod2 >= 2)]
+
+# cheking studentised residual
+abs_rstud_gugmod2 <- abs(rstud_gugmod2)
+stu_out_gugmod2 <- abs_rstud_gugmod2[which(abs_rstud_gugmod2 >= 2)]
+
+# checking abnormal values
+df_gugmod2 <- length(Villa_Gug$Pris_Salg) - 4 - 1
+
+abn_val_gugmod2 <- abs_rstud_gugmod2[which(abs_rstud_gugmod2 > qt(p = (1-(0.05/2)), df = df_gugmod2))]
+
+# checking cooks distance
+cooks_gugmod2 <- abs(cooks.distance(gugmod2))
+cook_out_gugmod2 <- cooks_gugmod2[which(cooks_gugmod2 > pf(0.1, df1 = 5 , df2 = length(Villa_Gug$Pris_Salg)))]
+
+# checking cooks distance with new threshold
+cook_new_thresh_gugmod2 <- cooks_gugmod2[which(cooks_gugmod2 > pf(0.5, df1 = 5 , df2 = length(Villa_Gug$Pris_Salg)))]
+
+# Printing outliers
+outliers_gugmod2 <- c(names(std_out_gugmod2), names(stu_out_gugmod2), names(abn_val_gugmod2), names(cook_out_gugmod2))
+outliers_gugmod2 <- unique(outliers_gugmod2)
+out_num_gugmod2 <- as.numeric(outliers_gugmod2)
+sort(out_num_gugmod2)
+Villa_Gug[out_num_gugmod2,]
+
+# xtable
+outliers_gugmod2_df <- data.frame(sort(out_num_gugmod2))
+abn_df_gug <- data.frame(observation = names(abn_val_gugmod2), Abnormal_Values = abn_val_gugmod2,stringsAsFactors = FALSE)
+cook_df_gug <- data.frame(observation = names(cook_out_gugmod2), Cooks_distance = cook_out_gugmod2,stringsAsFactors = FALSE)
+stand_df_gug <- data.frame(observation = names(std_out_gugmod2), Standerdised_resi = std_out_gugmod2,stringsAsFactors = FALSE)
+fisk <- merge(abn_df_gug,cook_df_gug, all = TRUE, by = "observation")
+fisk <- merge(fisk,stand_df_gug, all = TRUE, by = "observation")
+fisk1 <- fisk %>% arrange(as.numeric(observation))
+row.names(fisk1) <- fisk1$observation
+fisk1$observation <- NULL
+xtable(fisk1, type = "html", file = "fisk1.htm")
+# BP-test
+bptest(gugmod2)
+
+# removing outliers
+Villa_Gug_no_outliers <- Villa_Gug[-c(88),]
+
+# new model
+gugmod3 <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Ejd_AntalRum + Alder + Trend, data = Villa_Gug_no_outliers)
+
+# Fitting new model
+gugmod4 <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Alder + Trend, data = Villa_Gug_no_outliers)
+
+# xtable printing outliers
+tabelgug4 <- xtable(gugmod4, digits = c(6,6,5,4,3))
+
+```
+
+
+# Fitting a model to Villa_Hasseris 
+```{r}
+hasmod2 <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Ejd_AntalRum + Alder + Trend, data = Villa_Hasseris)
+
+#residuals
+rstan_hasmod2 <- rstandard(hasmod2)
+rstud_hasmod2 <- rstudent(hasmod2)
+
+# scatter plots of residuals vs the explanatory variables (skal køres i et normalt r script)
+plot(Villa_Hasseris$Alder, rstan_hasmod2, xlab = "Alder", ylab = "Standardised Residuals")
+abline(h=mean(rstan_hasmod2),col = "red")
+
+plot(Villa_Hasseris$Trend, rstan_hasmod2, xlab = "Trend", ylab = "Standardised Residuals")
+abline(h=mean(rstan_hasmod2),col = "red")
+
+plot(log(Villa_Hasseris$Areal_Bolig), rstan_hasmod2, xlab = "Log[Bolig_Areal]", ylab = "Standardised Residuals")
+abline(h=mean(rstan_hasmod2),col = "red")
+
+plot(Villa_Hasseris$Ejd_AntalRum, rstan_hasmod2, xlab = "Ejd_AntalRum", ylab = "Standardised Residuals")
+abline(h=mean(rstan_hasmod2),col = "red")
+
+# plots 
+cook.level.h <- pf(0.1, df1 = 5 , df2 = length(Villa_Hasseris$Pris_Salg))
+plot(hasmod2, cook.levels = c(cook.level.h), sub.caption = " ")
+
+des_mat_hasmod2 <- model.matrix(hasmod2)
+qr(des_mat_hasmod2)$rank
+
+# checking standardised residual
+abs_rstan_hasmod2 <- abs(rstan_hasmod2)
+std_out_hasmod2 <- abs_rstan_hasmod2[which(abs_rstan_hasmod2 >= 2)]
+
+# cheking studentised residual
+abs_rstud_hasmod2 <- abs(rstud_hasmod2)
+stu_out_hasmod2 <- abs_rstud_hasmod2[which(abs_rstud_hasmod2 >= 2)]
+
+# checking abnormal values
+df_hasmod2 <- length(Villa_Hasseris$Pris_Salg) - 4 - 1
+
+abn_val_hasmod2 <- abs_rstud_hasmod2[which(abs_rstud_hasmod2 > qt(p = 1-(0.05/2), df = df_hasmod2))]
+
+# checking cooks distance
+cooks_hasmod2 <- abs(cooks.distance(hasmod2))
+cook_out_hasmod2 <- cooks_hasmod2[which(cooks_hasmod2 > pf(0.1, df1 = 5 , df2 = length(Villa_Hasseris$Pris_Salg)))]
+
+outliers_hasmod2 <- c(names(std_out_hasmod2), names(stu_out_hasmod2), names(abn_val_hasmod2), names(cook_out_hasmod2))
+outliers_hasmod2 <- unique(outliers_hasmod2)
+out_num_hasmod2 <- as.numeric(outliers_hasmod2)
+sort(out_num_hasmod2)
+
+abn_df_has <- data.frame(observation = names(abn_val_hasmod2), Abnormal_Values = abn_val_hasmod2,stringsAsFactors = FALSE)
+
+cook_df_has <- data.frame(observation = names(cook_out_hasmod2), Cooks_distance = cook_out_hasmod2,stringsAsFactors = FALSE)
+
+stand_df_has <- data.frame(observation = names(std_out_hasmod2), Standerdised_resi = std_out_hasmod2,stringsAsFactors = FALSE)
+
+has_df_out <- merge(abn_df_has,cook_df_has, all = TRUE, by = "observation")
+
+has_df_out <- merge(has_df_out,stand_df_has, all = TRUE, by = "observation")
+
+has_df_out1 <- has_df_out %>% arrange(as.numeric(observation))
+
+row.names(has_df_out1) <- has_df_out1$observation
+
+has_df_out1$observation <- NULL
+
+xtable(has_df_out1, type = "html", file = "fisk1.htm")
+
+bptest(hasmod2)
+
+Villa_Hasseris[out_num_hasmod2,]
+
+# removing outliers 
+Villa_Hasseris_no_outliers <- Villa_Hasseris[-c(67,140,155),]
+
+# new model
+hasmod3 <- lm(log(Pris_Salg) ~ log(Areal_Bolig) +  Ejd_AntalRum + Alder + Trend, data = Villa_Hasseris_no_outliers)
+
+# fitting new model
+hasmod4 <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Trend, data = Villa_Hasseris_no_outliers)
+
+# xtable printing outliers
+tabelhas4 <- xtable(hasmod4, digits = c(6,6,5,4,3))
+
+```
+
+# Fitting a model to Villa_Klarup  
+```{r}
+klamod2 <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Ejd_AntalRum + Alder + Trend, data = Villa_Klarup)
+
+#residuals
+rstan_klamod2 <- rstandard(klamod2)
+rstud_klamod2 <- rstudent(klamod2)
+
+# scatter plots of residuals vs the explanatory variables (skal køres i et normalt r script)
+plot(Villa_Klarup$Alder, rstan_klamod2, xlab = "Alder", ylab = "Standardised Residuals")
+abline(h=mean(rstan_klamod2),col = "red")
+
+plot(Villa_Klarup$Trend, rstan_klamod2, xlab = "Trend", ylab = "Standardised Residuals")
+abline(h=mean(rstan_klamod2),col = "red")
+
+plot(log(Villa_Klarup$Areal_Bolig), rstan_klamod2, xlab = "Log[Bolig_Areal]", ylab = "Standardised Residuals")
+abline(h=mean(rstan_klamod2),col = "red")
+
+plot(Villa_Klarup$Ejd_AntalRum, rstan_klamod2, xlab = "Ejd_AntalRum", ylab = "Standardised Residuals")
+abline(h=mean(rstan_klamod2),col = "red")
+
+#rank
+des_mat_klamod2 <- model.matrix(klamod2)
+qr(des_mat_klamod2)$rank
+
+# plots 
+cooks.level.k <- pf(0.1, df1 = 5 , df2 = length(Villa_Klarup$Pris_Salg))
+plot(klamod2, cook.levels = c(cooks.level.k), sub.caption = " ")
+
+# checking standardised residual
+abs_rstan_klamod2 <- abs(rstan_klamod2)
+std_out_klamod2 <- abs_rstan_klamod2[which(abs_rstan_klamod2 >= 2)]
+
+# cheking studentised residual
+abs_rstud_klamod2 <- abs(rstud_klamod2)
+stu_out_klamod2 <- abs_rstud_klamod2[which(abs_rstud_klamod2 >= 2)]
+
+# checking abnormal values
+df_klamod2 <- length(Villa_Klarup$Pris_Salg) - 4 - 1
+
+abn_val_klamod2 <- abs_rstud_klamod2[which(abs_rstud_klamod2 > qt(p = (1-(0.05/2)), df = df_klamod2))]
+
+# checking cooks distance
+cooks_klamod2 <- abs(cooks.distance(klamod2))
+cook_out_klamod2 <- cooks_klamod2[which(cooks_klamod2 > pf(0.1, df1 = 5 , df2 = length(Villa_Klarup$Pris_Salg)))]
+
+outliers_klamod2 <- c(names(std_out_klamod2), names(stu_out_klamod2), names(abn_val_klamod2), names(cook_out_klamod2))
+outliers_klamod2 <- unique(outliers_klamod2)
+out_num_klamod2 <- as.numeric(outliers_klamod2)
+sort(out_num_klamod2)
+
+#creating table with outliers
+abn_df_kla <- data.frame(observation = names(abn_val_klamod2), Abnormal_Values = abn_val_klamod2,stringsAsFactors = FALSE)
+
+cook_df_kla <- data.frame(observation = names(cook_out_klamod2), Cooks_distance = cook_out_klamod2,stringsAsFactors = FALSE)
+
+stand_df_kla <- data.frame(observation = names(std_out_klamod2), Standerdised_resi = std_out_klamod2,stringsAsFactors = FALSE)
+
+kla_df_out <- merge(abn_df_kla,cook_df_kla, all = TRUE, by = "observation")
+
+kla_df_out <- merge(kla_df_out,stand_df_kla, all = TRUE, by = "observation")
+
+kla_df_out1 <- kla_df_out %>% arrange(as.numeric(observation))
+
+row.names(kla_df_out1) <- kla_df_out1$observation
+
+kla_df_out1$observation <- NULL
+
+xtable(kla_df_out1, type = "html", file = "fisk1.htm")
+
+bptest(klamod2)
+
+Villa_Klarup[out_num_klamod2,]
+
+# removing outliers
+Villa_Klarup_no_outliers <- Villa_Klarup[-c(78,109,173),]
+
+# new model
+klamod3 <- lm(log(Pris_Salg) ~  log(Areal_Bolig) + Ejd_AntalRum + Alder + Trend, data = Villa_Klarup_no_outliers)
+
+# fitting new model
+klamod4 <- lm(log(Pris_Salg) ~  log(Areal_Bolig) + Alder + Trend, data = Villa_Klarup_no_outliers)
+
+# xtable printing outliers
+tabelkla4 <- xtable(klamod4, digits = c(6,6,5,4,3))
+
+
+```
+
+# Fitting a model to Villa_Vejgård  
+```{r}
+vejmod2 <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Ejd_AntalRum + Alder + Trend, data = Villa_Vejgård)
+
+#residuals
+
+rstan_vejmod2 <- rstandard(vejmod2)
+rstud_vejmod2 <- rstudent(vejmod2)
+
+#rank
+
+des_mat_vejmod2 <- model.matrix(vejmod2)
+qr(des_mat_vejmod2)$rank
+
+# plots 
+plot(Villa_Vejgård$Alder, rstan_vejmod2, xlab = "Alder", ylab = "Standardised Residuals")
+abline(h=mean(rstan_vejmod2),col = "red")
+
+plot(Villa_Vejgård$Trend, rstan_vejmod2, xlab = "Trend", ylab = "Standardised Residuals")
+abline(h=mean(rstan_vejmod2),col = "red")
+
+plot(log(Villa_Vejgård$Areal_Bolig), rstan_vejmod2, xlab = "Log[Bolig_Areal]", ylab = "Standardised Residuals")
+abline(h=mean(rstan_vejmod2),col = "red")
+
+plot(Villa_Vejgård$Ejd_AntalRum, rstan_vejmod2, xlab = "Ejd_AntalRum", ylab = "Standardised Residuals")
+abline(h=mean(rstan_vejmod2),col = "red")
+
+
+cooks.level.v <- pf(0.1, df1 = 5 , df2 = length(Villa_Vejgård$Pris_Salg))
+plot(vejmod2, cook.levels = c(cooks.level.v), sub.caption = " ")
+
+# checking standardised residual
+abs_rstan_vejmod2 <- abs(rstan_vejmod2)
+std_out_vejmod2 <- abs_rstan_vejmod2[which(abs_rstan_vejmod2 >= 2)]
+
+# cheking studentised residual
+abs_rstud_vejmod2 <- abs(rstud_vejmod2)
+stu_out_vejmod2 <- abs_rstud_vejmod2[which(abs_rstud_vejmod2 >= 2)]
+
+# checking abnormal values
+df_vejmod2 <- length(Villa_Vejgård$Pris_Salg) - 4 - 1
+
+abn_val_vejmod2 <- abs_rstud_vejmod2[which(abs_rstud_vejmod2 > qt(p = (1-(0.05/2)), df = df_vejmod2))]
+
+# checking cooks distance
+cooks_vejmod2 <- abs(cooks.distance(vejmod2))
+cook_out_vejmod2 <- cooks_vejmod2[which(cooks_vejmod2 > pf(0.1, df1 = 5 , df2 = length(Villa_Vejgård$Pris_Salg)))]
+
+outliers_vejmod2 <- c(names(std_out_vejmod2), names(stu_out_vejmod2), names(abn_val_vejmod2), names(cook_out_vejmod2))
+outliers_vejmod2 <- unique(outliers_vejmod2)
+out_num_vejmod2 <- as.numeric(outliers_vejmod2)
+sort(out_num_vejmod2)
+
+#creating table with outliers
+abn_df_vej <- data.frame(observation = names(abn_val_vejmod2), Abnormal_Values = abn_val_vejmod2,stringsAsFactors = FALSE)
+
+cook_df_vej <- data.frame(observation = names(cook_out_vejmod2), Cooks_distance = cook_out_vejmod2,stringsAsFactors = FALSE)
+
+stand_df_vej <- data.frame(observation = names(std_out_vejmod2), Standerdised_resi = std_out_vejmod2,stringsAsFactors = FALSE)
+
+vej_df_out <- merge(abn_df_vej,cook_df_vej, all = TRUE, by = "observation")
+
+vej_df_out <- merge(vej_df_out,stand_df_vej, all = TRUE, by = "observation")
+
+vej_df_out1 <- vej_df_out %>% arrange(as.numeric(observation))
+
+row.names(vej_df_out1) <- vej_df_out1$observation
+
+vej_df_out1$observation <- NULL
+
+xtable(vej_df_out1, type = "html", file = "fisk1.htm")
+
+bptest(vejmod2)
+
+Villa_Vejgård[out_num_vejmod2,]
+
+#removing outliers
+Villa_Vejgård_no_outliers <- Villa_Vejgård[-c(176),]
+
+vejmod3 <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Ejd_AntalRum + Alder + Trend, data = Villa_Vejgård_no_outliers)
+
+
+# Fitting new model 
+vejmod4 <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Trend, data = Villa_Vejgård_no_outliers)
+
+# xtable printing outliers
+tabelvej4 <- xtable(vejmod4, digits = c(6,6,5,4,3))
+
+tabelvej4
+
+
+```
+
+
+```{r}
+# var test
+var.test(gugmod3, hasmod3)
+var.test(gugmod3, klamod3)
+var.test(gugmod3, vejmod3)
+var.test(hasmod3, klamod3)
+var.test(hasmod3, vejmod3)
+var.test(klamod3, vejmod3)
+```
+
+
+chow.test <- function(lm1, lm2, pooled_lm, n, k){
+  SSR_pooled <- sum(resid(pooled_lm)**2)
+  SSR_lm1 <- sum(resid(lm1)**2)
+  SSR_lm2 <- sum(resid(lm2)**2)
+  F_stat <- ((SSR_pooled-(SSR_lm1+SSR_lm2)) / (SSR_lm1+SSR_lm2)) * ((n-2*(k+1))/(k+1))
+  F_stat
+}
+
+# chow test
+```{r}
+#Gug/Klarup
+Gug_Kla_Villa <- rbind(Villa_Gug_no_outliers, Villa_Klarup_no_outliers)
+Gug_Kla_mod <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Alder + Trend, data = Gug_Kla_Villa)
+F_stat.g.k <- chow.test(gugmod4, klamod4, Gug_Kla_mod, n = length(Gug_Kla_Villa$Trend), k = 3)
+
+pf(F_stat.g.k, 3, (length(Gug_Kla_Villa$Trend)-2*3), lower.tail = FALSE)
+
+#hasseris/vejgaard
+Has_Vej_Villa <- rbind(Villa_Hasseris_no_outliers, Villa_Vejgård_no_outliers)
+Has_Vej_mod <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Trend, data = Has_Vej_Villa)
+F_Stat.h.v <- chow.test(hasmod4, vejmod4, Has_Vej_mod, n = length(Has_Vej_Villa$Trend),k = 2)
+
+pf(F_Stat.h.v, 2, (length(Has_Vej_Villa$Trend)-2*2), lower.tail = FALSE)
+```
+
+# model med dummy variabel
+```{r}
+# Adding a 'District' variable to each dataset
+Villa_Gug_no_outliers$District <- "Gug"
+Villa_Hasseris_no_outliers$District <- "Hasseris"
+Villa_Klarup_no_outliers$District <- "Klarup"
+Villa_Vejgård_no_outliers$District <- "Vejgaard"
+
+# Combine datasets
+Villa_4districts <- rbind(Villa_Gug_no_outliers, Villa_Hasseris_no_outliers, Villa_Klarup_no_outliers, Villa_Vejgård_no_outliers)
+
+# Ensure District is treated as a factor
+Villa_4districts$District <- factor(Villa_4districts$District, levels = c("Gug", "Hasseris","Klarup", "Vejgaard"))
+
+#dummy model with no interaction (only intercepts)
+Dummy_model_int <- lm(log(Pris_Salg) ~ log(Areal_Bolig) + Ejd_AntalRum + Alder + Trend + District, data = Villa_4districts)
+
+#dummy model
+Dummy_model <- lm(log(Pris_Salg) ~ log(Areal_Bolig)*District + Ejd_AntalRum*District + Alder*District + Trend*District + log(Areal_Bolig)*Ejd_AntalRum + District, data = Villa_4districts)
+# remove Ejd_AntalRum*District
+Dummy_model_2 <- lm(log(Pris_Salg) ~ log(Areal_Bolig)*District + Ejd_AntalRum + Alder*District + Trend + District + log(Areal_Bolig)*Ejd_AntalRum, data = Villa_4districts)
+# remove Ejd_AntalRum
+Dummy_model_3 <- lm(log(Pris_Salg) ~ log(Areal_Bolig)*District + log(Areal_Bolig):Ejd_AntalRum + Alder*District + Trend + District, data = Villa_4districts)
+#remove log(Areal_Bolig):Ejd_AntalRum
+Dummy_model_4 <- lm(log(Pris_Salg) ~ log(Areal_Bolig)*District + Alder*District + Trend + District, data = Villa_4districts)
+
+#final model (remove district)
+Dummy_model_5 <- lm(log(Pris_Salg) ~ log(Areal_Bolig)*District - District + Alder*District - District + Trend, data = Villa_4districts)
+
+# xtable printing regression output
+tabeldummy <- xtable(Dummy_model_int, digits = c(5,5,5,5,3))
+```
+
+```{r}
+Villa_4districts22 <- Villa_4districts
+Villa_4districts22$District <- factor(Villa_4districts22$District, levels = c("Vejgaard", "Gug","Hasseris", "Klarup"))
+
+Dummy_model22 <- lm(log(Pris_Salg) ~ log(Areal_Bolig)*District + Ejd_AntalRum*District + Alder*District + Trend*District + log(Areal_Bolig)*Ejd_AntalRum + District, data = Villa_4districts22)
+
+summary(Dummy_model22)
+
+Dummy_model_522 <- lm(log(Pris_Salg) ~ log(Areal_Bolig)*District - District + Alder*District - District + Trend, data = Villa_4districts22)
+
+summary(Dummy_model_522)
+```
+
+```{r}
+#BIC
+BIC(Dummy_model)
+BIC(Dummy_model_int)
+BIC(Dummy_model_5)
+BIC(gugmod4)
+BIC(hasmod4)
+BIC(klamod4)
+BIC(vejmod4)
+```
+
+
+```{r}
+#plots log areal_bolig og log pris for fitted model
+combined_model.coef <- coef(Dummy_model_5)
+
+plot(log(Villa_4districts$Areal_Bolig), log(Villa_4districts$Pris_Salg), col=as.numeric(Villa_4districts$District)+1, xlab = "log(Areal_Bolig)", ylab = "log(Pris_Salg)")
+abline(a = combined_model.coef[1], b = combined_model.coef[2], col = 2)
+abline(a = combined_model.coef[1], b = (combined_model.coef[2] + combined_model.coef[5]), col = 3)
+abline(a = combined_model.coef[1], b = (combined_model.coef[2] + combined_model.coef[6]), col =4)
+abline(a = combined_model.coef[1], b = (combined_model.coef[2] + combined_model.coef[7]), col = 5)
+legend("topleft", levels(Villa_4districts$District), pch=16, lwd=1, col=2:5)
+```
+
+```{r}
+#plots til model med ingen interactiong
+combined_model.coef.no_int <- coef(Dummy_model_int)
+plot(log(Villa_4districts$Areal_Bolig), log(Villa_4districts$Pris_Salg), col=as.numeric(Villa_4districts$District)+1, xlab = "log(Areal_Bolig)", ylab = "log(Pris_Salg)")
+abline(a = combined_model.coef.no_int[1], b = combined_model.coef.no_int[2], col = 2)
+abline(a = combined_model.coef.no_int[1]+ combined_model.coef.no_int[6], b = (combined_model.coef.no_int[2]), col = 3)
+abline(a = combined_model.coef.no_int[1]+ combined_model.coef.no_int[7], b = (combined_model.coef.no_int[2]), col = 4)
+abline(a = combined_model.coef.no_int[1]+ combined_model.coef.no_int[8], b = (combined_model.coef.no_int[2]), col = 5)
+legend("topleft", levels(Villa_4districts$District), pch=16, lwd=1, col=2:5)
+```
+
+
