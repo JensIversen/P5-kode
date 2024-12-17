@@ -16,13 +16,9 @@ load(file='filepath/Homedata.Rda')
 
 
 ```{r}
-library(car)
-library(tidyverse)
-library(lmtest)
-library(latex2exp)
-library(xtable)
-library(GGally)
-library(texreg)
+library(tidyverse)#
+library(lmtest)#
+library(xtable)#
 ```
 
 
